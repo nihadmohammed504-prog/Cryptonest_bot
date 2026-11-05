@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#090817"><title>CNEST Core</title>
+<meta name="theme-color" content="#090817"><meta name="cnest-ui-version" content="2026-11-05-home-v3"><title>CNEST Core</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{color-scheme:dark;--bg:#090817;--panel:#12102a;--panel2:#191638;--line:#4935a0;--gold:#f4cb72;--mint:#62edc1;--cyan:#39cce9;--muted:#9da0bd;--white:#f7f7ff;--nav:rgba(9,8,23,.96)}
@@ -88,10 +88,28 @@ refreshWallet().catch(()=>{});
 const u=tg?.initDataUnsafe?.user;if(u){let n=[u.first_name,u.last_name].filter(Boolean).join(" ")||"CNEST User",i=((u.first_name||"C")[0]+((u.last_name||"")[0]||"")).toUpperCase();$("profileName").textContent=n;$("profileUsername").textContent=u.username?"@"+u.username:"No username";$("profileId").textContent=u.id||"—";$("profileAvatar").textContent=$("headerAvatar").textContent=i}
 let lastTapPower=1;
 let energyValue=0,energyLimit=1000,energyRegenMs=1000,energyUpdatedAt=Date.now();
-function displayedEnergy(){const gained=Math.floor(Math.max(0,Date.now()-energyUpdatedAt)/energyRegenMs);return Math.min(energyLimit,energyValue+gained)}
-function renderEnergy(){const shown=displayedEnergy();$("energyText").textContent=`${fmt(shown)} / ${fmt(energyLimit)}`;$("energyFill").style.width=Math.max(0,Math.min(100,shown/Math.max(1,energyLimit)*100))+"%"}
-function setEnergy(value,limit,regenSeconds){energyValue=Math.max(0,Number(value)||0);energyLimit=Math.max(1,Number(limit)||1000);energyRegenMs=Math.max(250,(Number(regenSeconds)||1)*1000);energyUpdatedAt=Date.now();renderEnergy()}
-setInterval(renderEnergy,250);
+function displayedEnergy(){
+  if(energyValue>=energyLimit)return energyLimit;
+  const elapsed=Math.max(0,Date.now()-energyUpdatedAt);
+  const gained=Math.floor(elapsed/energyRegenMs);
+  return Math.min(energyLimit,energyValue+gained);
+}
+function renderEnergy(){
+  const shown=displayedEnergy();
+  const text=$("energyText"),fill=$("energyFill");
+  if(text)text.textContent=`${fmt(shown)} / ${fmt(energyLimit)}`;
+  if(fill)fill.style.width=Math.max(0,Math.min(100,(shown/Math.max(1,energyLimit))*100))+"%";
+}
+function setEnergy(value,limit,regenSeconds){
+  energyValue=Math.max(0,Number(value)||0);
+  energyLimit=Math.max(1,Number(limit)||1000);
+  energyRegenMs=Math.max(250,(Number(regenSeconds)||1)*1000);
+  energyUpdatedAt=Date.now();
+  renderEnergy();
+}
+// Repaint independently of tapping; Date.now() also catches up after Telegram backgrounds the Mini App.
+setInterval(renderEnergy,200);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)renderEnergy()});
 async function loadMe(){let d=await api("/api/me");$("balance").textContent=fmt(d.points);$("profileBalance").textContent=fmt(d.points)+" COIN";$("totalEarned").textContent=fmt(d.total_earned)+" COIN";$("profileReferrals").textContent=fmt(d.referrals);$("tasksCompleted").textContent=fmt(d.tasks_completed);let t=d.tap;lastTapPower=t.tap_power;$("topTapPower").textContent="×"+fmt(t.tap_power);$("topReferrals").textContent=fmt(d.referrals);$("rankLabel").textContent=Number(d.points)>=10000?"Gold":Number(d.points)>=2500?"Silver":"Bronze";setEnergy(t.energy,t.energy_limit,t.regen_seconds);$("tapBtn").setAttribute("aria-label",`Tap CNEST coin to earn +${fmt(t.tap_power)}`);$("tapReward").textContent="+"+fmt(t.tap_power);if($("tapInfo"))$("tapInfo").textContent="Energy recharges automatically · +1 every "+fmt(t.regen_seconds)+"s";let box=$("upgradeList");if(box){box.innerHTML="";let names={tap_power:"Tap Power",energy_limit:"Energy Limit",recharge:"Recharge Speed"},descs={tap_power:"Earn more points with every tap.",energy_limit:"Increase your maximum energy.",recharge:"Regenerate energy faster."};Object.entries(d.upgrades||{}).forEach(([k,v])=>{let item=document.createElement("div");item.className="upgrade-item";let info=document.createElement("div"),nm=document.createElement("div"),sub=document.createElement("div");nm.className="upgrade-name";nm.textContent=(names[k]||k)+" · Lv."+v.level;sub.className="upgrade-sub";sub.textContent=descs[k]||"Upgrade your engine.";info.append(nm,sub);let b=document.createElement("button");b.className="upgrade-buy";b.textContent=v.level>=v.max_level?"MAX":"Upgrade · "+fmt(v.cost);b.disabled=v.level>=v.max_level||d.points<v.cost;b.onclick=()=>buyUpgrade(k);item.append(info,b);box.append(item)})}loadSocialFeatures().catch(()=>{})}
 function esc(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function loadSocialFeatures(){try{let [st,lb,ac,ev,puz]=await Promise.all([api("/api/streak"),api("/api/leaderboard"),api("/api/achievements"),api("/api/events"),api("/api/puzzle")]);$("streakInfo").textContent=`Current streak: ${st.streak} day(s). Milestone bonuses: 3d +50 · 7d +150 · 14d +350 · 30d +1,000. ${st.claimed_today?"Today's reward claimed.":"Claim today's reward to continue."}`;$("dailyBtn").disabled=st.claimed_today;$("dailyBtn").textContent=st.claimed_today?"Daily Claimed ✓":"Claim Daily +50";$("puzzleHint").textContent=puz.hint;$("comboBtn").disabled=puz.solved;$("comboBtn").textContent=puz.solved?"Combo Solved ✓":"Daily Combo Puzzle";$("leaderboard").innerHTML=(lb.leaders||[]).slice(0,10).map((x,i)=>`<div class="leader-row"><div class="leader-left"><span class="leader-rank">#${i+1}</span><b class="leader-name">${esc(x.name)}</b></div><span class="leader-points">${fmt(x.points)} pts</span></div>`).join("")||'<div class="empty">No players yet.</div>';$("achievements").innerHTML=(ac.achievements||[]).map(a=>`${a.unlocked?"✅":"🔒"} ${esc(a.title)} · ${fmt(a.reward)} points`).join("<br>")||"No achievements yet.";$("events").innerHTML=(ev.events||[]).length?ev.events.map(e=>`<div class="event-item"><strong>${esc(e.title)} · +${fmt(e.reward)}</strong><div class="muted">${esc(e.description)}</div><button class="action-btn" ${e.claimed?"disabled":""} onclick="window.claimEvent(${Number(e.id)})">${e.claimed?"Claimed":"Claim reward"}</button></div>`).join(""):'<div class="empty">No live events right now.</div>'}catch(e){console.warn(e)}}
